@@ -1,0 +1,164 @@
+@import "tailwindcss";
+
+/* -----------------------------------------------------------------------
+   Design Tokens
+   ----------------------------------------------------------------------- */
+:root {
+  --color-bg: #080c14;
+  --color-surface: #0f172a;
+  --color-surface-2: #1e293b;
+  --color-border: #334155;
+  --color-accent-from: #7c3aed;
+  --color-accent-to: #0ea5e9;
+  --color-text: #f1f5f9;
+  --color-muted: #94a3b8;
+  --font-inter: "Inter", sans-serif;
+}
+
+/* -----------------------------------------------------------------------
+   Base
+   ----------------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-inter);
+  min-height: 100dvh;
+}
+
+/* -----------------------------------------------------------------------
+   Gradient text utility
+   ----------------------------------------------------------------------- */
+.gradient-text {
+  background: linear-gradient(135deg, var(--color-accent-from), var(--color-accent-to));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* -----------------------------------------------------------------------
+   Glassmorphism card
+   ----------------------------------------------------------------------- */
+.glass-card {
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+}
+
+/* -----------------------------------------------------------------------
+   Drop zone
+   ----------------------------------------------------------------------- */
+.drop-zone {
+  border: 2px dashed var(--color-border);
+  border-radius: 1rem;
+  transition: border-color 0.2s, background 0.2s;
+  cursor: pointer;
+}
+.drop-zone:hover, .drop-zone.active {
+  border-color: var(--color-accent-from);
+  background: rgba(124, 58, 237, 0.08);
+}
+
+/* -----------------------------------------------------------------------
+   Gradient progress bar
+   ----------------------------------------------------------------------- */
+.progress-bar {
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--color-surface-2);
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent-from), var(--color-accent-to));
+  transition: width 0.3s ease;
+}
+
+/* -----------------------------------------------------------------------
+   Scrollbar (webkit)
+   ----------------------------------------------------------------------- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-surface); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+
+/* -----------------------------------------------------------------------
+   Style radio cards
+   ----------------------------------------------------------------------- */
+.style-card {
+  border: 2px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: var(--color-surface);
+}
+.style-card:hover { border-color: #7c3aed88; }
+.style-card.selected {
+  border-color: var(--color-accent-from);
+  background: rgba(124, 58, 237, 0.1);
+}
+
+/* -----------------------------------------------------------------------
+   Loupe (zoom inspector)
+   ----------------------------------------------------------------------- */
+.loupe-container {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+}
+.loupe {
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  border: 3px solid var(--color-accent-from);
+  box-shadow: 0 0 0 2px rgba(124,58,237,0.4), 0 8px 32px rgba(0,0,0,0.6);
+  pointer-events: none;
+  overflow: hidden;
+  display: none;
+  z-index: 10;
+}
+.loupe-container:hover .loupe { display: block; }
+
+/* -----------------------------------------------------------------------
+   Animations
+   ----------------------------------------------------------------------- */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 12px rgba(124,58,237,0.4); }
+  50%       { box-shadow: 0 0 28px rgba(14,165,233,0.6); }
+}
+.animate-spin-slow { animation: spin-slow 3s linear infinite; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+/* -----------------------------------------------------------------------
+   Scrollable thumbnail grid
+   ----------------------------------------------------------------------- */
+.thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px;
+}
+.thumb-item {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--color-surface-2);
+}
+.thumb-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

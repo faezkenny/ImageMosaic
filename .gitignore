@@ -1,0 +1,21 @@
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/*.pyc
+backend/.pytest_cache/
+
+# OS
+.DS_Store
+*.swp
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local

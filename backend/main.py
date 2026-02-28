@@ -4,6 +4,7 @@ FastAPI application — Photo Mosaic Generator backend.
 from __future__ import annotations
 
 import io
+import time
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -12,7 +13,7 @@ from fastapi.responses import JSONResponse, Response
 
 from mosaic import analyze_sources, generate_mosaic, generate_preview
 
-app = FastAPI(title="Photo Mosaic API", version="1.0.0")
+app = FastAPI(title="Photo Mosaic API", version="2.0.0")
 
 # Allow the Next.js dev server to call us
 app.add_middleware(
@@ -25,8 +26,27 @@ app.add_middleware(
 
 # ---------------------------------------------------------------------------
 # In-memory session storage (suitable for a single-user local tool)
+# Sessions are evicted after SESSION_TTL_SECONDS of inactivity.
 # ---------------------------------------------------------------------------
 _SESSIONS: dict[str, dict] = {}
+SESSION_TTL_SECONDS = 30 * 60  # 30 minutes
+
+
+def _touch_session(session_id: str) -> None:
+    """Update the last-accessed timestamp for a session."""
+    if session_id in _SESSIONS:
+        _SESSIONS[session_id]["last_accessed"] = time.monotonic()
+
+
+def _evict_stale_sessions() -> None:
+    """Remove sessions that have not been accessed within SESSION_TTL_SECONDS."""
+    now = time.monotonic()
+    stale = [
+        sid for sid, data in _SESSIONS.items()
+        if now - data.get("last_accessed", 0) > SESSION_TTL_SECONDS
+    ]
+    for sid in stale:
+        del _SESSIONS[sid]
 
 
 @app.get("/api/health")
@@ -45,6 +65,8 @@ async def analyze(
     append to the existing palette rather than replacing it.
     Returns a palette JSON for the frontend to cache.
     """
+    _evict_stale_sessions()
+
     raw_bytes: List[bytes] = []
     for f in files:
         data = await f.read()
@@ -67,9 +89,12 @@ async def analyze(
         _SESSIONS[session_id] = {
             "source_bytes": raw_bytes,
             "palette": palette,
+            "tile_cache": {},  # {(idx, tile_size): PIL.Image} — persists across generate calls
+            "last_accessed": time.monotonic(),
         }
         merged_palette = palette
 
+    _touch_session(session_id)
     return JSONResponse({"palette": merged_palette, "count": len(merged_palette)})
 
 
@@ -89,6 +114,7 @@ async def preview(
     if not palette:
         raise HTTPException(status_code=400, detail="No palette data.")
 
+    _touch_session(session_id)
     main_bytes = await main_image.read()
     result = generate_preview(main_bytes, palette, tile_size=tile_size)
     return JSONResponse(result)
@@ -115,6 +141,7 @@ async def generate(
     session = _SESSIONS[session_id]
     palette = session["palette"]
     source_bytes = session["source_bytes"]
+    tile_cache = session.get("tile_cache", {})
 
     if not palette:
         raise HTTPException(status_code=400, detail="No source images / palette. Upload sources first.")
@@ -122,6 +149,7 @@ async def generate(
     if style not in ("A", "B", "C"):
         raise HTTPException(status_code=422, detail="style must be A, B, or C")
 
+    _touch_session(session_id)
     main_bytes = await main_image.read()
 
     try:
@@ -135,6 +163,7 @@ async def generate(
             overlay_opacity=overlay_opacity,
             shuffle_sources=shuffle_sources,
             a4_output=a4_output,
+            tile_cache=tile_cache,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

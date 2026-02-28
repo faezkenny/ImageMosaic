@@ -1,56 +1,44 @@
 "use client";
-import { useRef, useCallback } from "react";
+import { useCallback } from "react";
+import { useDropzone } from "react-dropzone";
 import { useMosaicStore } from "@/store/useMosaicStore";
 
-const BATCH_SIZE = 50; // Process thumbnails 50 at a time via requestIdleCallback
+const MIN_TILES_RECOMMENDED = 30;
 
 export default function SubImageUpload() {
     const { subImageFiles, subImagePreviews, addSubImageFiles, clearSubImages, isAnalyzing } =
         useMosaicStore();
-    const inputRef = useRef<HTMLInputElement>(null);
 
-    const handleFiles = useCallback(
-        (files: FileList | File[]) => {
-            const arr = Array.from(files).filter((f) => f.type.startsWith("image/"));
-            if (arr.length === 0) return;
-            addSubImageFiles(arr);
+    const onDrop = useCallback(
+        (accepted: File[]) => {
+            const images = accepted.filter((f) => f.type.startsWith("image/"));
+            if (images.length === 0) return;
+            addSubImageFiles(images);
         },
         [addSubImageFiles]
     );
 
-    const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files) handleFiles(e.target.files);
-        // Reset so same files can be added again
-        e.target.value = "";
-    };
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+        onDrop,
+        accept: { "image/*": [] },
+        multiple: true,
+        disabled: isAnalyzing,
+    });
 
-    const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        handleFiles(e.dataTransfer.files);
-    };
+    const tooFewTiles =
+        subImageFiles.length > 0 && subImageFiles.length < MIN_TILES_RECOMMENDED;
 
     return (
         <div className="flex flex-col gap-3">
             {/* Drop / click area */}
             <div
-                className={`drop-zone flex flex-col items-center justify-center gap-3 p-5 min-h-[140px] ${isAnalyzing ? "pointer-events-none opacity-60" : ""
-                    }`}
-                onClick={() => inputRef.current?.click()}
-                onDrop={onDrop}
-                onDragOver={(e) => e.preventDefault()}
+                {...getRootProps()}
+                className={`drop-zone flex flex-col items-center justify-center gap-3 p-5 min-h-[140px] ${
+                    isDragActive ? "active" : ""
+                } ${isAnalyzing ? "pointer-events-none opacity-60" : ""}`}
                 id="sub-images-dropzone"
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
             >
-                <input
-                    ref={inputRef}
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    className="hidden"
-                    onChange={onInputChange}
-                />
+                <input {...getInputProps()} />
                 <div className="w-12 h-12 rounded-xl bg-[var(--color-surface-2)] flex items-center justify-center border border-[var(--color-border)]">
                     <svg className="w-6 h-6 text-[var(--color-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
@@ -59,15 +47,29 @@ export default function SubImageUpload() {
                 </div>
                 <div className="text-center">
                     <p className="text-sm font-medium text-[var(--color-text)]">
-                        {subImageFiles.length > 0
-                            ? `${subImageFiles.length} image${subImageFiles.length === 1 ? "" : "s"} selected — click to add more`
-                            : "Select source tile images"}
+                        {isDragActive
+                            ? "Drop images here!"
+                            : subImageFiles.length > 0
+                                ? `${subImageFiles.length} image${subImageFiles.length === 1 ? "" : "s"} selected — click or drop to add more`
+                                : "Select source tile images"}
                     </p>
                     <p className="text-xs text-[var(--color-muted)] mt-1">
                         50–500+ images recommended. These become the mosaic tiles.
                     </p>
                 </div>
             </div>
+
+            {/* Low tile count warning */}
+            {tooFewTiles && (
+                <div className="flex items-start gap-2 rounded-xl border border-yellow-500/30 bg-yellow-950/30 px-3 py-2.5 text-xs text-yellow-300">
+                    <svg className="w-3.5 h-3.5 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    <span>
+                        Only {subImageFiles.length} tile{subImageFiles.length === 1 ? "" : "s"} — add at least {MIN_TILES_RECOMMENDED} for a good mosaic. Fewer tiles means more repetition.
+                    </span>
+                </div>
+            )}
 
             {/* Thumbnail grid */}
             {subImagePreviews.length > 0 && (
@@ -77,7 +79,7 @@ export default function SubImageUpload() {
                             Showing {Math.min(subImagePreviews.length, 200)} of {subImageFiles.length} thumbnails
                         </span>
                         <button
-                            onClick={clearSubImages}
+                            onClick={(e) => { e.stopPropagation(); clearSubImages(); }}
                             className="text-xs text-red-400 hover:text-red-300 transition-colors"
                             id="clear-sub-images-btn"
                         >

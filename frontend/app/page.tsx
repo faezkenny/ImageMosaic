@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import MainImageUpload from "@/components/MainImageUpload";
 import SubImageUpload from "@/components/SubImageUpload";
 import SettingsPanel from "@/components/SettingsPanel";
@@ -33,13 +33,49 @@ export default function HomePage() {
   const { analyze } = useAnalyzer();
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"preview" | "result">("preview");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // AbortController refs for cancellable fetches
+  const generateAbortRef = useRef<AbortController | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
 
   const canGenerate = !!mainImageFile && subImageFiles.length > 0;
+
+  // Elapsed time counter while generating
+  useEffect(() => {
+    if (!isGenerating && !isAnalyzing) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isGenerating, isAnalyzing]);
+
+  // Keyboard shortcut: Ctrl/Cmd + Enter → Generate
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && canGenerate && !isGenerating && !isAnalyzing) {
+        e.preventDefault();
+        handleGenerate();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canGenerate, isGenerating, isAnalyzing]);
 
   // ----- Analyze + possibly generate -------------------------------------
   const handleGenerate = useCallback(async () => {
     if (!mainImageFile || subImageFiles.length === 0) return;
     setError(null);
+
+    // Cancel any in-flight generate request
+    generateAbortRef.current?.abort();
+    const controller = new AbortController();
+    generateAbortRef.current = controller;
 
     try {
       // Step 1: analyze if palette not ready
@@ -59,7 +95,11 @@ export default function HomePage() {
       fd.append("shuffle_sources", String(shuffleSources));
       fd.append("a4_output", String(a4Output));
 
-      const res = await fetch("/api/generate", { method: "POST", body: fd });
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        body: fd,
+        signal: controller.signal,
+      });
       if (!res.ok) {
         const txt = await res.text();
         throw new Error(txt);
@@ -69,6 +109,7 @@ export default function HomePage() {
       setResult(url, blob);
       setActiveTab("result");
     } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return; // cancelled
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
     } finally {
@@ -85,18 +126,29 @@ export default function HomePage() {
   const handlePreview = useCallback(async () => {
     if (!mainImageFile || palette.length === 0) return;
     setError(null);
+
+    // Cancel any in-flight preview request
+    previewAbortRef.current?.abort();
+    const controller = new AbortController();
+    previewAbortRef.current = controller;
+
     setIsPreviewLoading(true);
     try {
       const fd = new FormData();
       fd.append("session_id", sessionId);
       fd.append("main_image", mainImageFile);
       fd.append("tile_size", String(tileSize));
-      const res = await fetch("/api/preview", { method: "POST", body: fd });
+      const res = await fetch("/api/preview", {
+        method: "POST",
+        body: fd,
+        signal: controller.signal,
+      });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setPreviewData(data);
       setActiveTab("preview");
     } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
     } finally {
@@ -135,10 +187,10 @@ export default function HomePage() {
         </a>
       </header>
 
+      {/* ---- Two-column layout (stacked on mobile) ---- */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[400px_1fr] gap-0">
         {/* ====== LEFT PANEL ====== */}
-        <aside className="border-r border-[var(--color-border)] p-6 flex flex-col gap-6 overflow-y-auto"
-          style={{ maxHeight: "calc(100dvh - 61px)" }}>
+        <aside className="border-b lg:border-b-0 lg:border-r border-[var(--color-border)] p-6 flex flex-col gap-6 lg:overflow-y-auto lg:[max-height:calc(100dvh-61px)]">
 
           {/* Main image */}
           <section className="glass-card p-4">
@@ -198,8 +250,7 @@ export default function HomePage() {
         </aside>
 
         {/* ====== RIGHT PANEL — RESULT ====== */}
-        <section className="p-6 overflow-y-auto flex flex-col gap-4"
-          style={{ maxHeight: "calc(100dvh - 61px)" }}>
+        <section className="p-6 lg:overflow-y-auto flex flex-col gap-4 lg:[max-height:calc(100dvh-61px)]">
 
           {/* Tab bar */}
           {(previewData || resultUrl) && (
@@ -248,7 +299,9 @@ export default function HomePage() {
                   {isAnalyzing ? "Analyzing tile palette…" : "Generating your mosaic…"}
                 </p>
                 <p className="text-xs text-[var(--color-muted)] mt-1">
-                  This may take a moment for large images
+                  {elapsedSeconds > 0
+                    ? `${elapsedSeconds}s elapsed — large images may take a moment`
+                    : "This may take a moment for large images"}
                 </p>
               </div>
             </div>
@@ -274,6 +327,9 @@ export default function HomePage() {
                 <p className="text-sm text-[var(--color-muted)] max-w-sm">
                   Upload a main image and source tiles, adjust the settings, then hit{" "}
                   <strong className="text-[var(--color-text)]">Generate Mosaic</strong>.
+                </p>
+                <p className="text-xs text-[var(--color-muted)] mt-2 opacity-60">
+                  Tip: press <kbd className="px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] border border-[var(--color-border)] font-mono text-[10px]">⌘ Enter</kbd> to generate
                 </p>
               </div>
               <div className="flex flex-wrap gap-4 justify-center text-xs text-[var(--color-muted)]">

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 export type Style = "A" | "B" | "C";
 
@@ -43,7 +44,7 @@ interface MosaicState {
     isAnalyzing: boolean;
     analyzeProgress: number; // 0-100
 
-    // Settings
+    // Settings (persisted to localStorage)
     tileSize: number;
     style: Style;
     allowRepeats: boolean;
@@ -91,88 +92,16 @@ function revokeUrls(urls: string[]) {
     }
 }
 
-export const useMosaicStore = create<MosaicState>((set, get) => ({
-    sessionId: makeSessionId(),
+// Settings that should be persisted across page refreshes
+const PERSISTED_SETTINGS_KEYS: (keyof MosaicState)[] = [
+    "tileSize", "style", "allowRepeats", "overlayOpacity", "shuffleSources", "a4Output",
+];
 
-    mainImageFile: null,
-    mainImagePreviewUrl: null,
-    subImageFiles: [],
-    subImagePreviews: [],
-    palette: [],
-    isAnalyzing: false,
-    analyzeProgress: 0,
-
-    tileSize: 40,
-    style: "A",
-    allowRepeats: true,
-    overlayOpacity: 0.25,
-    shuffleSources: false,
-    a4Output: false,
-
-    previewData: null,
-    isPreviewLoading: false,
-    isGenerating: false,
-    resultUrl: null,
-    resultBlob: null,
-
-    setMainImageFile: (file) => {
-        const prev = get().mainImagePreviewUrl;
-        if (prev) revokeUrls([prev]);
-        if (file) {
-            const url = URL.createObjectURL(file);
-            set({ mainImageFile: file, mainImagePreviewUrl: url, previewData: null, resultUrl: null, resultBlob: null });
-        } else {
-            set({ mainImageFile: null, mainImagePreviewUrl: null });
-        }
-    },
-
-    setSubImageFiles: (files) => {
-        // Revoke all previous preview URLs
-        revokeUrls(get().subImagePreviews);
-        const previews = files.slice(0, 200).map((f) => URL.createObjectURL(f));
-        set({ subImageFiles: files, subImagePreviews: previews, palette: [], previewData: null, resultUrl: null });
-    },
-
-    addSubImageFiles: (newFiles) =>
-        set((state) => {
-            // Revoke old previews before creating new ones
-            revokeUrls(state.subImagePreviews);
-            const merged = [...state.subImageFiles, ...newFiles];
-            const previews = merged.slice(0, 200).map((f) => URL.createObjectURL(f));
-            return { subImageFiles: merged, subImagePreviews: previews, palette: [], previewData: null };
-        }),
-
-    clearSubImages: () => {
-        revokeUrls(get().subImagePreviews);
-        set({ subImageFiles: [], subImagePreviews: [], palette: [], previewData: null });
-    },
-
-    setPalette: (palette) => set({ palette }),
-    setIsAnalyzing: (v) => set({ isAnalyzing: v }),
-    setAnalyzeProgress: (v) => set({ analyzeProgress: v }),
-    setTileSize: (v) => set({ tileSize: v }),
-    setStyle: (v) => set({ style: v }),
-    setAllowRepeats: (v) => set({ allowRepeats: v }),
-    setOverlayOpacity: (v) => set({ overlayOpacity: v }),
-    setShuffleSources: (v) => set({ shuffleSources: v }),
-    setA4Output: (v) => set({ a4Output: v }),
-    setPreviewData: (data) => set({ previewData: data }),
-    setIsPreviewLoading: (v) => set({ isPreviewLoading: v }),
-    setIsGenerating: (v) => set({ isGenerating: v }),
-
-    setResult: (url, blob) => {
-        const prev = get().resultUrl;
-        if (prev) revokeUrls([prev]);
-        set({ resultUrl: url, resultBlob: blob });
-    },
-
-    reset: () => {
-        const state = get();
-        if (state.mainImagePreviewUrl) revokeUrls([state.mainImagePreviewUrl]);
-        revokeUrls(state.subImagePreviews);
-        if (state.resultUrl) revokeUrls([state.resultUrl]);
-        set({
+export const useMosaicStore = create<MosaicState>()(
+    persist(
+        (set, get) => ({
             sessionId: makeSessionId(),
+
             mainImageFile: null,
             mainImagePreviewUrl: null,
             subImageFiles: [],
@@ -180,9 +109,97 @@ export const useMosaicStore = create<MosaicState>((set, get) => ({
             palette: [],
             isAnalyzing: false,
             analyzeProgress: 0,
+
+            tileSize: 40,
+            style: "A",
+            allowRepeats: true,
+            overlayOpacity: 0.25,
+            shuffleSources: false,
+            a4Output: false,
+
             previewData: null,
+            isPreviewLoading: false,
+            isGenerating: false,
             resultUrl: null,
             resultBlob: null,
-        });
-    },
-}));
+
+            setMainImageFile: (file) => {
+                const prev = get().mainImagePreviewUrl;
+                if (prev) revokeUrls([prev]);
+                if (file) {
+                    const url = URL.createObjectURL(file);
+                    set({ mainImageFile: file, mainImagePreviewUrl: url, previewData: null, resultUrl: null, resultBlob: null });
+                } else {
+                    set({ mainImageFile: null, mainImagePreviewUrl: null });
+                }
+            },
+
+            setSubImageFiles: (files) => {
+                revokeUrls(get().subImagePreviews);
+                const previews = files.slice(0, 200).map((f) => URL.createObjectURL(f));
+                set({ subImageFiles: files, subImagePreviews: previews, palette: [], previewData: null, resultUrl: null });
+            },
+
+            addSubImageFiles: (newFiles) =>
+                set((state) => {
+                    revokeUrls(state.subImagePreviews);
+                    const merged = [...state.subImageFiles, ...newFiles];
+                    const previews = merged.slice(0, 200).map((f) => URL.createObjectURL(f));
+                    return { subImageFiles: merged, subImagePreviews: previews, palette: [], previewData: null };
+                }),
+
+            clearSubImages: () => {
+                revokeUrls(get().subImagePreviews);
+                set({ subImageFiles: [], subImagePreviews: [], palette: [], previewData: null });
+            },
+
+            setPalette: (palette) => set({ palette }),
+            setIsAnalyzing: (v) => set({ isAnalyzing: v }),
+            setAnalyzeProgress: (v) => set({ analyzeProgress: v }),
+            setTileSize: (v) => set({ tileSize: v }),
+            setStyle: (v) => set({ style: v }),
+            setAllowRepeats: (v) => set({ allowRepeats: v }),
+            setOverlayOpacity: (v) => set({ overlayOpacity: v }),
+            setShuffleSources: (v) => set({ shuffleSources: v }),
+            setA4Output: (v) => set({ a4Output: v }),
+            setPreviewData: (data) => set({ previewData: data }),
+            setIsPreviewLoading: (v) => set({ isPreviewLoading: v }),
+            setIsGenerating: (v) => set({ isGenerating: v }),
+
+            setResult: (url, blob) => {
+                const prev = get().resultUrl;
+                if (prev) revokeUrls([prev]);
+                set({ resultUrl: url, resultBlob: blob });
+            },
+
+            reset: () => {
+                const state = get();
+                if (state.mainImagePreviewUrl) revokeUrls([state.mainImagePreviewUrl]);
+                revokeUrls(state.subImagePreviews);
+                if (state.resultUrl) revokeUrls([state.resultUrl]);
+                set({
+                    sessionId: makeSessionId(),
+                    mainImageFile: null,
+                    mainImagePreviewUrl: null,
+                    subImageFiles: [],
+                    subImagePreviews: [],
+                    palette: [],
+                    isAnalyzing: false,
+                    analyzeProgress: 0,
+                    previewData: null,
+                    resultUrl: null,
+                    resultBlob: null,
+                });
+            },
+        }),
+        {
+            name: "mosaic-settings",
+            storage: createJSONStorage(() => localStorage),
+            // Only persist user settings, not transient state or File objects
+            partialize: (state) =>
+                Object.fromEntries(
+                    PERSISTED_SETTINGS_KEYS.map((k) => [k, state[k]])
+                ) as Partial<MosaicState>,
+        }
+    )
+);

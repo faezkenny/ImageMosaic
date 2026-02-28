@@ -1,12 +1,11 @@
 "use client";
-import { useState } from "react";
 import { useMosaicStore } from "@/store/useMosaicStore";
 
 const CHUNK_BYTES = 5 * 1024 * 1024; // 5MB chunk per batch POST
 
 export function useAnalyzer() {
     const {
-        sessionId, subImageFiles, palette,
+        sessionId, subImageFiles,
         setIsAnalyzing, setAnalyzeProgress, setPalette,
     } = useMosaicStore();
 
@@ -30,8 +29,7 @@ export function useAnalyzer() {
         }
         if (current.length) batches.push(current);
 
-        let allPalette: { index: number; r: number; g: number; b: number }[] = [];
-        let globalIndex = 0;
+        let latestPalette: { index: number; r: number; g: number; b: number }[] = [];
 
         for (let i = 0; i < batches.length; i++) {
             const batch = batches[i];
@@ -43,19 +41,16 @@ export function useAnalyzer() {
             if (!res.ok) throw new Error(`Analyze failed: ${await res.text()}`);
             const json = await res.json();
 
-            // Re-index so indices match original subImageFiles order
-            const offset = globalIndex;
-            json.palette.forEach((p: { index: number; r: number; g: number; b: number }) => {
-                allPalette.push({ ...p, index: p.index + offset });
-            });
-            globalIndex += batch.length;
+            // Backend now returns the full merged palette for the session,
+            // with correct indices already applied server-side.
+            latestPalette = json.palette;
 
             setAnalyzeProgress(Math.round(((i + 1) / batches.length) * 100));
         }
 
-        setPalette(allPalette);
+        setPalette(latestPalette);
         setIsAnalyzing(false);
     };
 
-    return { analyze, palette };
+    return { analyze };
 }

@@ -84,7 +84,14 @@ interface MosaicState {
 const makeSessionId = () =>
     Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-export const useMosaicStore = create<MosaicState>((set) => ({
+/** Revoke a list of object URLs to free browser memory. */
+function revokeUrls(urls: string[]) {
+    for (const url of urls) {
+        try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+    }
+}
+
+export const useMosaicStore = create<MosaicState>((set, get) => ({
     sessionId: makeSessionId(),
 
     mainImageFile: null,
@@ -109,6 +116,8 @@ export const useMosaicStore = create<MosaicState>((set) => ({
     resultBlob: null,
 
     setMainImageFile: (file) => {
+        const prev = get().mainImagePreviewUrl;
+        if (prev) revokeUrls([prev]);
         if (file) {
             const url = URL.createObjectURL(file);
             set({ mainImageFile: file, mainImagePreviewUrl: url, previewData: null, resultUrl: null, resultBlob: null });
@@ -118,19 +127,25 @@ export const useMosaicStore = create<MosaicState>((set) => ({
     },
 
     setSubImageFiles: (files) => {
+        // Revoke all previous preview URLs
+        revokeUrls(get().subImagePreviews);
         const previews = files.slice(0, 200).map((f) => URL.createObjectURL(f));
         set({ subImageFiles: files, subImagePreviews: previews, palette: [], previewData: null, resultUrl: null });
     },
 
     addSubImageFiles: (newFiles) =>
         set((state) => {
+            // Revoke old previews before creating new ones
+            revokeUrls(state.subImagePreviews);
             const merged = [...state.subImageFiles, ...newFiles];
             const previews = merged.slice(0, 200).map((f) => URL.createObjectURL(f));
             return { subImageFiles: merged, subImagePreviews: previews, palette: [], previewData: null };
         }),
 
-    clearSubImages: () =>
-        set({ subImageFiles: [], subImagePreviews: [], palette: [], previewData: null }),
+    clearSubImages: () => {
+        revokeUrls(get().subImagePreviews);
+        set({ subImageFiles: [], subImagePreviews: [], palette: [], previewData: null });
+    },
 
     setPalette: (palette) => set({ palette }),
     setIsAnalyzing: (v) => set({ isAnalyzing: v }),
@@ -144,9 +159,18 @@ export const useMosaicStore = create<MosaicState>((set) => ({
     setPreviewData: (data) => set({ previewData: data }),
     setIsPreviewLoading: (v) => set({ isPreviewLoading: v }),
     setIsGenerating: (v) => set({ isGenerating: v }),
-    setResult: (url, blob) => set({ resultUrl: url, resultBlob: blob }),
 
-    reset: () =>
+    setResult: (url, blob) => {
+        const prev = get().resultUrl;
+        if (prev) revokeUrls([prev]);
+        set({ resultUrl: url, resultBlob: blob });
+    },
+
+    reset: () => {
+        const state = get();
+        if (state.mainImagePreviewUrl) revokeUrls([state.mainImagePreviewUrl]);
+        revokeUrls(state.subImagePreviews);
+        if (state.resultUrl) revokeUrls([state.resultUrl]);
         set({
             sessionId: makeSessionId(),
             mainImageFile: null,
@@ -159,5 +183,6 @@ export const useMosaicStore = create<MosaicState>((set) => ({
             previewData: null,
             resultUrl: null,
             resultBlob: null,
-        }),
+        });
+    },
 }));
